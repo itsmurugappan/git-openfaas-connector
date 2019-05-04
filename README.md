@@ -20,6 +20,9 @@ on repo/function mapping in the environment variable
 * Download dependencies
 ```
 dep ensure
+* Test
+```
+go test
 ```
 * Build the code
 ```
@@ -32,10 +35,15 @@ docker build -t git-faas  .
 
 #### Deploy connector
 
-1. provide the following environment variables in the deployment
-2. Secret token  (some string for git webhook validation)
-3. repo url (key) and fn name (value)
-4. api path prefix like http://gateway:8080/function/
+Following are the configuration options as environment variables
+
+| Key | Value | Default | Description |
+|-----|-------|---------|-------------|
+| secret | token string | no default - mandatory field | the secret token to validate git webhooks |
+| api | api prefix | http://gateway:8080/function/ | api prefix path like http://gateway:8080/function/ |
+| git url | function | no default - mandatory field | please specify your git url as key and function name as the value |
+| retry | number of retries | 3 | number of time function should be retried |
+| timeout | Transport dialer time out | 100s | timeout duration like 50s |
 
 
 #### Github Set Up

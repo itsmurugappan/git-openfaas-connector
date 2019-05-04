@@ -14,6 +14,10 @@ import (
   "encoding/json"
   "github.com/hashicorp/go-retryablehttp"
   "fmt"
+  "bytes"
+  "time"
+  "strconv"
+  "net"
 )
 
 func signBody(secret, body []byte) []byte {
@@ -105,16 +109,73 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
   fnName, _ := os.LookupEnv(repoName)
 
-  api,_ := os.LookupEnv("api")
+  api, api_env_available := os.LookupEnv("api")
 
-  _, rErr := retryablehttp.Post(api + fnName, "application/json", hc.Payload)
-  if rErr != nil {
-      panic(rErr)
+  if !api_env_available {
+      api = "http://gateway:8080/function/"
   }
 
-  // parse `hc.Payload` or do additional processing here
+  timeout, to_env_available := os.LookupEnv("timeout")
+
+  if !to_env_available {
+      timeout = "100s"
+  }
+
+  timeout_duration , _ := time.ParseDuration(timeout)
+
+  log.Printf("timeout_int :  %s", timeout_duration)
+
+
+  retry, retry_env_available := os.LookupEnv("retry")
+
+  if !retry_env_available {
+      retry = "3"
+  }
+
+  retry_int , _ := strconv.Atoi(retry)
+
+  httpClient := retryablehttp.NewClient()
+  httpClient.HTTPClient = &http.Client{
+        Transport: &http.Transport{
+            Dial: TimeoutDialer(timeout_duration, timeout_duration),
+        },
+    }
+  httpClient.RetryWaitMin = timeout_duration / 7
+  httpClient.RetryWaitMax = timeout_duration / 2
+  httpClient.RetryMax = retry_int
+  httpClient.Backoff = retryablehttp.LinearJitterBackoff
+
+  req, rErr := retryablehttp.NewRequest("POST", api + fnName, bytes.NewReader(hc.Payload))
+  if rErr != nil {
+    log.Printf("error building request: ('%s')", rErr)
+    w.WriteHeader(http.StatusBadRequest)
+    io.WriteString(w, "{}")
+    return
+  }
+
+  req.Header.Set("Content-Type", "application/json")
+
+  _ , hErr := httpClient.Do(req)
+  if hErr != nil {
+    log.Printf("error calling webhook: ('%s')", hErr)
+    w.WriteHeader(http.StatusInternalServerError)
+    io.WriteString(w, "{}")
+    return
+  }
 
   w.WriteHeader(http.StatusOK)
   io.WriteString(w, "{}")
   return
 }
+
+func TimeoutDialer(cTimeout time.Duration, rwTimeout time.Duration) func(net, addr string) (c net.Conn, err error) {
+    return func(netw, addr string) (net.Conn, error) {
+        conn, err := net.DialTimeout(netw, addr, cTimeout)
+        if err != nil {
+            return nil, err
+        }
+        conn.SetDeadline(time.Now().Add(rwTimeout))
+        return conn, nil
+    }
+}
+
