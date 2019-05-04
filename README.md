@@ -20,6 +20,7 @@ on repo/function mapping in the environment variable
 * Download dependencies
 ```
 dep ensure
+```
 * Test
 ```
 go test
